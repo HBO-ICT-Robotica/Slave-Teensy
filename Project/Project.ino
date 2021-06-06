@@ -1,3 +1,37 @@
+// #include "Dynamixel.h"
+// #include "DynamixelInterface.h"
+// #include "DynamixelMotor.h"
+
+// DynamixelInterface dInterface(Serial2, 2);
+
+// DynamixelMotor servo(dInterface, 0);
+
+// void setup()
+// {
+//     dInterface.begin(115200, 50);
+
+//     servo.init();
+//     servo.statusReturnLevel(2);
+//     servo.jointMode();
+//     servo.enableTorque();
+//     servo.speed(1023);
+//     servo.torqueLimit(1023);
+
+//     while (true)
+//     {
+//         DynamixelStatus status = servo.ping();
+//         Serial.println(status, BIN);
+
+//         //servo.goalPosition(600);
+
+//         delay(1000);
+//     }
+// }
+
+// void loop() {
+
+// }
+
 #include "Dynamixel.h"
 #include "DynamixelInterface.h"
 #include "DynamixelMotor.h"
@@ -15,7 +49,8 @@ int incomingByte = 0;
 
 byte incomingBytes[10];
 
-byte lastJoystickValue = 0;
+byte lastJoystickXValue = 0;
+byte lastJoystickYValue = 0;
 
 typedef void (*commandBody)(byte[10]);
 
@@ -35,10 +70,35 @@ DynamixelMotor servos[4] = {
     DynamixelMotor(dInterface, 3),
 };
 
-int motors[4] = {
-    23, 22, 21, 20};
+struct Motor
+{
+    int inAPin;
+    int inBPin;
+    int pwmPin;
+
+    bool forward;
+    byte speed;
+
+    Motor(int inAPin, int inBPin, int pwmPin) {
+        this->inAPin = inAPin;
+        this->inBPin = inBPin;
+        this->pwmPin = pwmPin;
+
+        this->forward = true;
+        this->speed = 0;
+    }
+};
+
+Motor motors[4] = {
+    Motor(23, 22, 3),
+    Motor(21, 20, 4),
+    Motor(19, 18, 5),
+    Motor(17, 16, 6),
+};
 
 unsigned long lastUpdate;
+
+unsigned long lastDataFromRemoteReceivedTime;
 
 void handleSetServoTargetDegree(byte incomingBytes[10])
 {
@@ -71,23 +131,36 @@ void handleSetMotorPwm(byte incomingBytes[10])
 {
     Serial.println("Motor pwm");
     uint8_t id     = incomingBytes[1];
-    uint16_t speed = incomingBytes[2];
+    uint8_t speed = incomingBytes[2];
 
-    Serial.println(speed);
-    analogWrite(motors[id], speed);
+    motors[id].speed = speed;
+}
+
+void handleSetMotorMode(byte incomingBytes[10]) {
+    Serial.println("Motor mode");
+
+    uint8_t id   = incomingBytes[1];
+    uint8_t mode = incomingBytes[2];
+
+    if (mode == 1) {
+        // Forward
+        motors[id].forward = true;
+    } else if (mode == 2) {
+        // Reverse
+        motors[id].forward = false;
+    }
 }
 
 void setup()
 {
     Serial.begin(115200);
-    // while (!Serial) {}
     if (!radio.begin())
     {
         Serial.println(F("radio hardware is not responding!!"));
         while (1) {}
     }
+    while (!Serial) { }
     Serial.println(F("Which radio is this? Enter '0' or '1'. Defaults to '0'"));
-    //while (!Serial.available()) {}
     //char input  = Serial.parseInt();
     radioNumber = false;
 
@@ -130,6 +203,9 @@ void setup()
 
     for (byte i = 0; i < 4; i++)
     {
+        DynamixelStatus status = servos[i].ping();
+        Serial.println(status);
+
         servos[i].init();
         servos[i].statusReturnLevel(2);
         servos[i].jointMode();
@@ -138,9 +214,24 @@ void setup()
         servos[i].torqueLimit(1023);
     }
 
-    for (int i = 0; i < 4; i++) {
-        analogWrite(motors[i], LOW);
+    for (int i = 0; i < 4; i++)
+    {
+        pinMode(motors[i].inAPin, OUTPUT);
+        pinMode(motors[i].inBPin, OUTPUT);
+        pinMode(motors[i].pwmPin, OUTPUT);
+
+        digitalWrite(motors[i].inAPin, LOW);
+        digitalWrite(motors[i].inBPin, LOW);
+        analogWrite(motors[i].pwmPin, 0);
     }
+
+    Serial.println("init done");
+
+    while (!Serial3.available()) {
+        Serial3.read();
+    }
+
+    Serial.println("handshake done");
 }
 
 void handleCommand()
@@ -156,7 +247,8 @@ void handleCommand()
             continue;
         }
 
-        int incomingByte = Serial3.read();
+        byte incomingByte = Serial3.read();
+        Serial.println(incomingByte);
 
         if (i == 0)
         {
@@ -168,7 +260,6 @@ void handleCommand()
             incomingBytes[i] = incomingByte;
         }
 
-        Serial.println(incomingByte);
         i++;
 
         if (i == command.requiredBytes)
@@ -200,11 +291,22 @@ void loop()
         {
             uint8_t bytes = radio.getPayloadSize();
 
+            lastDataFromRemoteReceivedTime = millis();
+
             radio.read(&payload, bytes);
 
-            if ((payload & 0b01000000) == 0b01000000)
+            if ((payload & 0b10000000) == 0b00000000)
             {
-                lastJoystickValue = payload & 0b00111111;
+                byte id = payload & 0b01000000;
+
+                if (id == 0)
+                {
+                    lastJoystickXValue = payload & 0b00111111;
+                }
+                else
+                {
+                    lastJoystickYValue = payload & 0b00111111;
+                }
             }
 
             // servos[0].goalPosition(map(payload[0], 0, 1023, 1023 - 120, 1023 - 560));
@@ -217,7 +319,19 @@ void loop()
         }
     }
 
-    if (millis() - lastUpdate > 100)
+    for (int i = 0; i < 4; i++) {
+        if (motors[i].forward) {
+            digitalWrite(motors[i].inAPin, HIGH);
+            digitalWrite(motors[i].inBPin, LOW);
+        } else {
+            digitalWrite(motors[i].inAPin, LOW);
+            digitalWrite(motors[i].inBPin, HIGH);
+        }
+
+        analogWrite(motors[i].pwmPin, motors[i].speed);
+    }
+
+    if (millis() - lastUpdate > 1000)
     {
         // Motors
         for (uint8_t i = 0; i < 4; i++)
@@ -232,14 +346,22 @@ void loop()
             Serial3.write(data, 4);
         }
 
-        // Joystick
+        // Joystick X
         {
-            uint8_t data[] = {0x01, lastJoystickValue};
-
-            Serial3.write(data, 2);
+            uint8_t data[] = {0x01, 0x00, lastJoystickXValue};
+            Serial3.write(data, 3);
         }
-        //Serial3.flush();
 
+        // Joystick Y
+        {
+            uint8_t data[] = {0x01, 0x01, lastJoystickYValue};
+            Serial3.write(data, 3);
+        }
         lastUpdate = millis();
+    }
+
+    if (millis() - lastDataFromRemoteReceivedTime > 100) {
+        uint8_t data[] = {0x02};
+        Serial3.write(data, 1);
     }
 }
