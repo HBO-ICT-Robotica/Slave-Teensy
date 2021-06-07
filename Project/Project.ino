@@ -4,25 +4,39 @@
 
 // DynamixelInterface dInterface(Serial2, 2);
 
-// DynamixelMotor servo(dInterface, 0);
+// DynamixelMotor servos[4] = {
+//     DynamixelMotor(dInterface, 0),
+//     DynamixelMotor(dInterface, 1),
+//     DynamixelMotor(dInterface, 2),
+//     DynamixelMotor(dInterface, 3),
+// };
 
 // void setup()
 // {
+//     Serial.begin(9600);
+//     while (!Serial) {
+
+//     }
+
 //     dInterface.begin(115200, 50);
 
-//     servo.init();
-//     servo.statusReturnLevel(2);
-//     servo.jointMode();
-//     servo.enableTorque();
-//     servo.speed(1023);
-//     servo.torqueLimit(1023);
+//     for (int i = 0; i < 4; i++) {
+//         servos[i].init();
+//         servos[i].statusReturnLevel(2);
+//         servos[i].jointMode();
+//         servos[i].enableTorque();
+//         servos[i].speed(1023);
+//         servos[i].torqueLimit(1023);
+//     }
 
 //     while (true)
 //     {
-//         DynamixelStatus status = servo.ping();
-//         Serial.println(status, BIN);
+//         for (int i = 0; i < 4; i++) {
+//             DynamixelStatus status = servos[i].ping();
+//             Serial.println(status, BIN);
 
-//         //servo.goalPosition(600);
+//             //servo.goalPosition(600);
+//         }
 
 //         delay(1000);
 //     }
@@ -30,6 +44,26 @@
 
 // void loop() {
 
+// }
+
+// void setup()
+// {
+//     Serial.begin(9600);
+//     while (!Serial) { }
+
+//     Serial3.begin(9600, SERIAL_8N1);
+
+//     while (!Serial3) {}
+
+//     Serial.println("setup done");
+// }
+
+// void loop()
+// {
+//     while (Serial3.available()) {    
+//         byte data = Serial3.read();
+//        Serial.println(data);
+//     }
 // }
 
 #include "Dynamixel.h"
@@ -227,9 +261,8 @@ void setup()
 
     Serial.println("init done");
 
-    while (!Serial3.available()) {
-        Serial3.read();
-    }
+    while (!Serial3.available()) { }
+    Serial3.read();
 
     Serial.println("handshake done");
 }
@@ -290,7 +323,7 @@ void loop()
         if (radio.available(&pipe))
         {
             uint8_t bytes = radio.getPayloadSize();
-
+            
             lastDataFromRemoteReceivedTime = millis();
 
             radio.read(&payload, bytes);
